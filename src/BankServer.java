@@ -21,6 +21,7 @@ public class BankServer {
     private static final String keyString = "mySimpleSharedKey"; // Ensure this is sufficiently secure and random for production use
     private static final byte[] keyBytes = keyString.getBytes(StandardCharsets.UTF_8);
     private static final SecretKey sharedKey = new SecretKeySpec(Arrays.copyOf(keyBytes, 16), "AES"); // Using AES-128. Adjust the length as necessary.
+    private static Map<String, Double> accountBalances = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -47,13 +48,16 @@ public class BankServer {
         public void run() {
             try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                  PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-
+        
                 String request;
+                String username = null; // You might already have this for handling REGISTER and LOGIN
+        
                 // Keep listening for client requests on the same connection
                 while ((request = in.readLine()) != null) {
                     switch (request) {
+                        // Existing cases: REGISTER, LOGIN, QUIT
                         case "REGISTER":
-                            String username = in.readLine();
+                            username = in.readLine();
                             String password = in.readLine(); // Hash in a real system
                             String registrationResult = registerUser(username, password);
                             out.println(registrationResult);
@@ -69,19 +73,41 @@ public class BankServer {
                             }
                             break;
                         case "QUIT":
-                            // Client wants to close the connection
+                            // Existing quit logic
                             return; // Exit the thread
+                        // Add the new cases here for VIEW BALANCE, DEPOSIT, and WITHDRAW
+                        case "VIEW BALANCE":
+                            double balance = accountBalances.getOrDefault(username, 0.0);
+                            out.println("Your account balance is: $" + balance);
+                            break;
+                        case "DEPOSIT":
+                            double amount = Double.parseDouble(in.readLine());
+                            accountBalances.merge(username, amount, Double::sum);
+                            out.println("Deposit successful. New balance: $" + accountBalances.get(username));
+                            break;
+                        case "WITHDRAW":
+                            amount = Double.parseDouble(in.readLine());
+                            double currentBalance = accountBalances.getOrDefault(username, 0.0);
+                            if (amount <= currentBalance) {
+                                accountBalances.put(username, currentBalance - amount);
+                                out.println("Withdrawal successful. New balance: $" + accountBalances.get(username));
+                            } else {
+                                out.println("ERROR: Insufficient funds.");
+                            }
+                            break;
+                        // Handle unknown requests or keep alive messages
                         default:
-                            // Handle unknown requests or keep alive messages
+                            // Unknown request logic
                             break;
                     }
                 }
-
+        
             } catch (IOException ex) {
                 System.out.println("Server exception: " + ex.getMessage());
                 ex.printStackTrace();
             }
         }
+        
 
         private void performKeyDistributionProtocol(BufferedReader in, PrintWriter out, String username) throws IOException {
             try {
